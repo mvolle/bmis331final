@@ -1,0 +1,106 @@
+import pandas as pd
+import time
+import csv
+
+class Order:
+    def __init__(self, order_id, items, destination):
+        self.order_id = order_id
+        self.items = items
+        self.destination = destination
+
+def batch_orders(orders, batch_size):
+    batches = []
+    current_batch = []
+    current_batch_destination = None
+
+    for order in orders:
+        if current_batch_destination is None:
+            current_batch_destination = order.destination
+
+        if order.destination == current_batch_destination and len(current_batch) < batch_size:
+            current_batch.append(order)
+        else:
+            batches.append(current_batch)
+            current_batch = [order]
+            current_batch_destination = order.destination
+
+    if current_batch:  # Append the last batch if not empty
+        batches.append(current_batch)
+
+    return batches
+
+def print_batches(batches):
+    for i, batch in enumerate(batches):
+        print(f"Batch {i+1}:")
+        for order in batch:
+            print(f"Order ID: {order.order_id}, Destination: {order.destination}, Items: {', '.join(order.items)}")
+        print()
+
+def fetch_orders_from_google_sheet(api_url, sort_column='Order_ID'):
+    MAX_RETRIES = 3
+    RETRY_DELAY = 5
+
+    retries = 0
+    while retries < MAX_RETRIES:
+        try:
+            df = pd.read_csv(api_url)
+            df_sorted = df.sort_values(by=sort_column)  # Sort orders based on the specified column
+            orders = []
+            for index, row in df_sorted.iterrows():
+                order_id = row['Order_ID']
+                items = row['Items'].split(',')
+                destination = row['Destination']
+                orders.append(Order(order_id, items, destination))
+            return orders
+        except Exception as e:
+            print("Error fetching orders:", e)
+            print(f"Retrying in {RETRY_DELAY} seconds...")
+            time.sleep(RETRY_DELAY)
+            retries += 1
+    print("Failed to fetch orders after multiple retries. Please check your internet connection and try again later.")
+    return []
+
+def main():
+    print("Welcome to the Order Batching Program!")
+    print("This program helps you batch orders for shipping.")
+    print("Please provide the necessary information to get started.")
+
+    api_url = input("Enter the URL of your Google Sheet (CSV format): ")
+    sort_column = input("Enter the column name to sort orders (default is 'Order_ID'): ") or 'Order_ID'
+
+    orders = fetch_orders_from_google_sheet(api_url, sort_column)
+
+    if orders:
+        try:
+            batch_size = int(input("Enter batch size: "))
+            if batch_size <= 0:
+                raise ValueError("Batch size must be a positive integer.")
+        except ValueError:
+            print("Invalid input. Please enter a valid positive integer for batch size.")
+            return
+
+        batches = batch_orders(orders, batch_size)
+        print_batches(batches)
+
+        # Export batches to CSV
+        export_option = input("Do you want to export batches to CSV? (yes/no): ")
+        if export_option.lower() == 'yes':
+            file_name = input("Enter the file name (default is 'batches.csv'): ") or 'batches.csv'
+            export_batches_to_csv(batches, file_name)
+    else:
+        print("No orders found.")
+
+def export_batches_to_csv(batches, file_name='batches.csv'):
+    try:
+        with open(file_name, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Batch', 'Order ID', 'Destination', 'Items'])
+            for i, batch in enumerate(batches):
+                for order in batch:
+                    writer.writerow([i+1, order.order_id, order.destination, ', '.join(order.items)])
+        print(f"Batches exported to '{file_name}' successfully.")
+    except Exception as e:
+        print("Error exporting batches to CSV:", e)
+
+if __name__ == "__main__":
+    main()
